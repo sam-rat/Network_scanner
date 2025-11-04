@@ -18,9 +18,20 @@ Built with **Tkinter**, this tool provides multiple scan types, live progress up
 - 🔄 Multi-threaded execution keeps GUI responsive
 - 🧠 Smart Nmap command builder based on user input
 
-## 🛠️ Installation Guide (All Systems)
+##Screenshots
+<p align="center">
+  <img src="images/screenshot.png" alt="Main GUI" width="800">
+</p>
+<p align="center">
+  <img src="images/screenshot1.png" alt="Main GUI" width="800">
+</p>
 
-### 1️⃣ Clone the repository
+## 🛠️ Installation Guide (Kali linux)
+ ```bash
+sudo apt update && sudo apt upgrade -y
+sudo apt install python3 python3-pip python3-tk nmap git -y
 git clone https://github.com/sam_rat/Network_scanner.git
-
 cd Network_scanner
+pip3 install -r requirements.txt
+sudo python3 Network_scanner.py
+
