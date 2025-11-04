@@ -1,219 +1,220 @@
-import scapy.all as scapy
-import socket
-import threading
-from queue import Queue
-import ipaddress
 import tkinter as tk
-from tkinter import ttk, messagebox
-
-# --- Configurable parameters ---
-PORTS_TO_SCAN = [21, 22, 23, 25, 53, 80, 110, 139, 143, 443, 445, 3389, 8080]
-PORT_SCAN_TIMEOUT = 0.8
-ICMP_TIMEOUT = 1.0
-# ------------------------------------
-
-def scan(ip, result_queue, progress_queue, total_ips):
-    arp_request = scapy.ARP(pdst=ip)
-    broadcast = scapy.Ether(dst="ff:ff:ff:ff:ff:ff")
-    packet = broadcast / arp_request
-    answer = scapy.srp(packet, timeout=1, verbose=False)[0]
-
-    clients = []
-    for client in answer:
-        client_info = {'IP': client[1].psrc, 'MAC': client[1].hwsrc}
-        try:
-            hostname = socket.gethostbyaddr(client_info['IP'])[0]
-            client_info['Hostname'] = hostname
-        except socket.herror:
-            client_info['Hostname'] = 'Unknown'
-
-        open_ports = []
-        for port in PORTS_TO_SCAN:
-            try:
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.settimeout(PORT_SCAN_TIMEOUT)
-                err = s.connect_ex((client_info['IP'], port))
-                if err == 0:
-                    banner = None
-                    try:
-                        s.settimeout(0.6)
-                        data = s.recv(1024)
-                        if data:
-                            banner = data.decode(errors='ignore').strip()
-                    except Exception:
-                        banner = None
-                    open_ports.append({'port': port, 'banner': banner})
-                s.close()
-            except Exception:
-                pass
-
-        client_info['Open_Ports'] = open_ports
-        try:
-            resp = scapy.sr1(scapy.IP(dst=client_info['IP']) / scapy.ICMP(), timeout=ICMP_TIMEOUT, verbose=False)
-            ttl = getattr(resp, 'ttl', None) if resp else None
-            if ttl is None:
-                client_info['OS'] = 'Unknown'
-            elif ttl <= 64:
-                client_info['OS'] = f'Linux/Unix (TTL={ttl})'
-            elif ttl <= 128:
-                client_info['OS'] = f'Windows-ish (TTL={ttl})'
-            else:
-                client_info['OS'] = f'Network device/Other (TTL={ttl})'
-        except PermissionError:
-            client_info['OS'] = 'Unknown (need elevated privileges)'
-        except Exception:
-            client_info['OS'] = 'Unknown'
-
-        clients.append(client_info)
-
-    result_queue.put(clients)
-    progress_queue.put(1)  # Update progress
+from tkinter import ttk, messagebox, scrolledtext
+import subprocess
+import threading
+import platform
 
 
-def print_result(clients):
-    if not clients:
-        print("No active hosts found.")
-        return
+class NmapGUI:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Python Nmap Scanner")
+        self.root.geometry("800x600")
 
-    print("=" * 80)
-    print(f"{'IP Address':<18}{'MAC Address':<22}{'Open Ports':<25}{'OS Guess':<15}")
-    print("=" * 80)
-    for client in clients:
-        ip = client.get('IP', 'N/A')
-        mac = client.get('MAC', 'N/A')
-        ports = ', '.join(str(p['port']) for p in client.get('Open_Ports', [])) or '-'
-        os_guess = client.get('OS', 'Unknown')
-        print(f"{ip:<18}{mac:<22}{ports:<25}{os_guess:<15}")
-    print("=" * 80)
-    print(f"Total hosts found: {len(clients)}")
-    print("=" * 80)
+        # Variables
+        self.target_var = tk.StringVar()
+        self.scan_type_var = tk.StringVar(value="Quick Scan")
+        self.ports_var = tk.StringVar(value="1-1000")
+        self.output_var = tk.StringVar(value="Normal")
 
+        # Create widgets
+        self.create_widgets()
 
-def main(cidr, progress_callback):
-    results_queue = Queue()
-    progress_queue = Queue()
-    threads = []
-    network = ipaddress.ip_network(cidr, strict=False)
-    total_ips = len(list(network.hosts()))
+    def create_widgets(self):
+        # Main frame
+        main_frame = ttk.Frame(self.root, padding="10")
+        main_frame.pack(fill=tk.BOTH, expand=True)
 
-    def progress_monitor():
-        scanned = 0
-        while scanned < total_ips:
-            progress_queue.get()
-            scanned += 1
-            percent = int((scanned / total_ips) * 100)
-            progress_callback(percent)
-        progress_callback(100)
+        # Target section
+        target_frame = ttk.LabelFrame(main_frame, text="Target", padding="10")
+        target_frame.pack(fill=tk.X, pady=5)
 
-    threading.Thread(target=progress_monitor, daemon=True).start()
+        ttk.Label(target_frame, text="Target (IP/Hostname/Range):").grid(row=0, column=0, sticky=tk.W)
+        target_entry = ttk.Entry(target_frame, textvariable=self.target_var, width=40)
+        target_entry.grid(row=0, column=1, sticky=tk.W, padx=5)
 
-    for ip in network.hosts():
-        thread = threading.Thread(target=scan, args=(str(ip), results_queue, progress_queue, total_ips))
-        thread.start()
-        threads.append(thread)
+        # Scan options section
+        options_frame = ttk.LabelFrame(main_frame, text="Scan Options", padding="10")
+        options_frame.pack(fill=tk.X, pady=5)
 
-    for thread in threads:
-        thread.join()
+        # Scan type
+        ttk.Label(options_frame, text="Scan Type:").grid(row=0, column=0, sticky=tk.W)
+        scan_types = ["Quick Scan", "Full Scan", "Ping Scan", "OS Detection", "Version Detection", "Custom"]
+        scan_combo = ttk.Combobox(options_frame, textvariable=self.scan_type_var, values=scan_types, state="readonly")
+        scan_combo.grid(row=0, column=1, sticky=tk.W, padx=5)
+        scan_combo.bind("<<ComboboxSelected>>", self.update_scan_options)
 
-    all_clients = []
-    while not results_queue.empty():
-        all_clients.extend(results_queue.get())
+        # Ports
+        ttk.Label(options_frame, text="Ports:").grid(row=1, column=0, sticky=tk.W)
+        self.ports_entry = ttk.Entry(options_frame, textvariable=self.ports_var, width=20)
+        self.ports_entry.grid(row=1, column=1, sticky=tk.W, padx=5)
 
-    print_result(all_clients)
-    return all_clients
+        # Output format
+        ttk.Label(options_frame, text="Output:").grid(row=2, column=0, sticky=tk.W)
+        output_formats = ["Normal", "Verbose", "XML", "Grepable"]
+        output_combo = ttk.Combobox(options_frame, textvariable=self.output_var, values=output_formats,
+                                    state="readonly")
+        output_combo.grid(row=2, column=1, sticky=tk.W, padx=5)
 
+        # Buttons
+        button_frame = ttk.Frame(main_frame, padding="10")
+        button_frame.pack(fill=tk.X, pady=5)
 
-# ---------------- GUI ----------------
+        scan_button = ttk.Button(button_frame, text="Start Scan", command=self.start_scan)
+        scan_button.pack(side=tk.LEFT, padx=5)
 
-def run_gui():
-    def update_progress(percent):
-        progress_bar['value'] = percent
-        progress_label.config(text=f"{percent}% completed")
-        root.update_idletasks()
+        clear_button = ttk.Button(button_frame, text="Clear Results", command=self.clear_results)
+        clear_button.pack(side=tk.LEFT, padx=5)
 
-    def start_scan():
-        cidr = cidr_entry.get().strip()
-        if not cidr:
-            messagebox.showwarning("Input Error", "Please enter a valid CIDR (e.g. 192.168.1.0/24)")
+        # Results section
+        results_frame = ttk.LabelFrame(main_frame, text="Scan Results", padding="10")
+        results_frame.pack(fill=tk.BOTH, expand=True)
+
+        self.results_text = scrolledtext.ScrolledText(results_frame, wrap=tk.WORD, width=80, height=20)
+        self.results_text.pack(fill=tk.BOTH, expand=True)
+
+        # Status bar
+        self.status_var = tk.StringVar(value="Ready")
+        status_bar = ttk.Label(self.root, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W)
+        status_bar.pack(fill=tk.X)
+
+    def update_scan_options(self, event=None):
+        scan_type = self.scan_type_var.get()
+
+        if scan_type == "Quick Scan":
+            self.ports_var.set("1-1000")
+        elif scan_type == "Full Scan":
+            self.ports_var.set("1-65535")
+        elif scan_type == "Ping Scan":
+            self.ports_var.set("")
+        elif scan_type == "OS Detection":
+            self.ports_var.set("1-1000")
+        elif scan_type == "Version Detection":
+            self.ports_var.set("1-1000")
+
+    def build_nmap_command(self):
+        target = self.target_var.get().strip()
+        if not target:
+            messagebox.showerror("Error", "Please enter a target to scan")
+            return None
+
+        scan_type = self.scan_type_var.get()
+        ports = self.ports_var.get().strip()
+        output_format = self.output_var.get()
+
+        # Base command
+        if platform.system() == "Windows":
+            command = ["nmap.exe"]
+        else:
+            command = ["nmap"]
+
+        # Add scan type options
+        if scan_type == "Quick Scan":
+            command.extend(["-T4", "-F"])
+        elif scan_type == "Full Scan":
+            command.extend(["-p-", "-T4"])
+        elif scan_type == "Ping Scan":
+            command.append("-sn")
+        elif scan_type == "OS Detection":
+            command.extend(["-O"])
+        elif scan_type == "Version Detection":
+            command.extend(["-sV"])
+
+        # Add ports if specified
+        if ports and scan_type != "Ping Scan":
+            command.extend(["-p", ports])
+
+        # Add output format
+        if output_format == "Verbose":
+            command.append("-v")
+        elif output_format == "XML":
+            command.append("-oX")
+            command.append("-")  # Output to stdout
+        elif output_format == "Grepable":
+            command.append("-oG")
+            command.append("-")  # Output to stdout
+
+        # Add target
+        command.append(target)
+
+        return command
+
+    def start_scan(self):
+        command = self.build_nmap_command()
+        if not command:
             return
 
-        start_button.config(state='disabled')
-        status_label.config(text="🔍 Scanning in progress...", bg="#ffb347")
-        tree.delete(*tree.get_children())
-        progress_bar['value'] = 0
-        progress_label.config(text="0% completed")
+        self.results_text.delete(1.0, tk.END)
+        self.results_text.insert(tk.END, f"Starting scan with command: {' '.join(command)}\n\n")
+        self.status_var.set("Scanning...")
 
-        def thread_scan():
-            results = main(cidr, update_progress)
-            for c in results:
-                ports = ', '.join(str(p['port']) for p in c.get('Open_Ports', [])) or '-'
-                tree.insert('', 'end', values=(c['IP'], c['MAC'], ports, c['OS']))
-            status_label.config(text=f"✅ Scan complete. {len(results)} hosts found.", bg="#77dd77")
-            start_button.config(state='normal')
+        # Disable buttons during scan
+        for widget in self.root.winfo_children():
+            if isinstance(widget, ttk.Button):
+                widget.config(state=tk.DISABLED)
 
-        threading.Thread(target=thread_scan, daemon=True).start()
+        # Run scan in a separate thread to keep GUI responsive
+        scan_thread = threading.Thread(target=self.run_scan, args=(command,), daemon=True)
+        scan_thread.start()
 
+    def run_scan(self, command):
+        try:
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+                universal_newlines=True
+            )
+
+            # Read output in real-time
+            while True:
+                output = process.stdout.readline()
+                if output == '' and process.poll() is not None:
+                    break
+                if output:
+                    self.results_text.insert(tk.END, output)
+                    self.results_text.see(tk.END)
+                    self.root.update_idletasks()
+
+            # Check for errors
+            stderr = process.stderr.read()
+            if stderr:
+                self.results_text.insert(tk.END, f"\nError:\n{stderr}\n")
+
+            return_code = process.poll()
+            if return_code == 0:
+                self.status_var.set("Scan completed successfully")
+            else:
+                self.status_var.set(f"Scan completed with return code {return_code}")
+
+        except FileNotFoundError:
+            self.results_text.insert(tk.END,
+                                     "\nError: Nmap not found. Please ensure Nmap is installed and in your PATH.\n")
+            self.status_var.set("Nmap not found")
+        except Exception as e:
+            self.results_text.insert(tk.END, f"\nError: {str(e)}\n")
+            self.status_var.set("Error during scan")
+        finally:
+            # Re-enable buttons
+            self.root.after(0, self.enable_buttons)
+
+    def enable_buttons(self):
+        for widget in self.root.winfo_children():
+            if isinstance(widget, ttk.Button):
+                widget.config(state=tk.NORMAL)
+
+    def clear_results(self):
+        self.results_text.delete(1.0, tk.END)
+        self.status_var.set("Ready")
+
+
+def main():
     root = tk.Tk()
-    root.title("🛰️ Network Scanner")
-    root.geometry("880x600")
-    root.configure(bg="#1e1e2e")
-
-    style = ttk.Style()
-    style.theme_use("clam")
-    style.configure("Treeview",
-                    background="#2b2b3d", foreground="white",
-                    fieldbackground="#2b2b3d", rowheight=26, font=('Segoe UI', 10))
-    style.configure("Treeview.Heading",
-                    background="#44475a", foreground="white", font=('Segoe UI', 10, 'bold'))
-    style.map('Treeview', background=[('selected', '#6272a4')])
-
-    title_label = tk.Label(root, text="Network Scanner", font=("Segoe UI", 20, "bold"),
-                           fg="white", bg="#1e1e2e")
-    title_label.pack(pady=15)
-
-    frame = tk.Frame(root, bg="#1e1e2e")
-    frame.pack(pady=5)
-
-    tk.Label(frame, text="Enter Network CIDR: ", font=("Segoe UI", 12),
-             fg="white", bg="#1e1e2e").pack(side='left', padx=5)
-    cidr_entry = tk.Entry(frame, width=25, font=("Segoe UI", 12), bg="#3c3f41", fg="white",
-                          insertbackground="white", relief="flat")
-    cidr_entry.pack(side='left', padx=5, ipady=3)
-
-    start_button = tk.Button(frame, text="Start Scan", font=("Segoe UI", 10, "bold"),
-                             bg="#4CAF50", fg="white", activebackground="#45a049",
-                             cursor="hand2", relief="flat", command=start_scan)
-    start_button.pack(side='left', padx=8, ipadx=10, ipady=3)
-
-    # Progress Bar
-    progress_frame = tk.Frame(root, bg="#1e1e2e")
-    progress_frame.pack(pady=10)
-    progress_bar = ttk.Progressbar(progress_frame, orient='horizontal', length=400, mode='determinate')
-    progress_bar.pack(pady=4)
-    progress_label = tk.Label(progress_frame, text="0% completed", font=("Segoe UI", 10),
-                              fg="white", bg="#1e1e2e")
-    progress_label.pack()
-
-    # Results Table
-    columns = ("IP Address", "MAC Address", "Open Ports", "OS Guess")
-    tree_frame = tk.Frame(root, bg="#1e1e2e")
-    tree_frame.pack(fill='both', expand=True, padx=10, pady=10)
-    tree_scroll = ttk.Scrollbar(tree_frame)
-    tree_scroll.pack(side='right', fill='y')
-
-    tree = ttk.Treeview(tree_frame, columns=columns, show='headings', yscrollcommand=tree_scroll.set)
-    for col in columns:
-        tree.heading(col, text=col)
-        tree.column(col, width=200, anchor='center')
-    tree.pack(fill='both', expand=True)
-    tree_scroll.config(command=tree.yview)
-
-    status_label = tk.Label(root, text="Ready", font=("Segoe UI", 10),
-                            bg="#3c3f41", fg="white", anchor='w')
-    status_label.pack(fill='x', side='bottom', pady=3)
-
+    app = NmapGUI(root)
     root.mainloop()
 
 
-if __name__ == '__main__':
-    run_gui()
+if __name__ == "__main__":
+    main()
