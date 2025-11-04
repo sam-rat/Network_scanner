@@ -1,0 +1,6 @@
+
+# Core dependency for network scanning
+scapy>=2.4.5
+
+# GUI library (usually preinstalled, but added for completeness)
+tk
