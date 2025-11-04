@@ -1,10 +1,19 @@
-# Network_scanner
-A Python-based GUI network scanner that detects live hosts, open ports, and operating systems using Scapy and multithreading.
+# ⚡ Python Nmap GUI Scanner
 
-🚀 Features
+A user-friendly **Python-based GUI for Nmap** that allows you to perform fast and advanced network scans directly from an interactive desktop interface.  
+Built with **Tkinter**, this tool provides multiple scan types, live progress updates, and formatted results — no terminal needed.
 
-- Scan any subnet using CIDR notation (e.g. `192.168.1.0/24`)
-- Identify IP, MAC, and Hostname
-- Perform multi-threaded port scanning on common ports
-- Estimate target OS using TTL-based ICMP analysis
-- Beautiful Tkinter GUI with live progress tracking
+## 🚀 Features
+
+- 🖥️ Simple Tkinter GUI — no need for CLI commands
+- ⚙️ Supports multiple scan modes:
+  - Quick Scan (fast top 1000 ports)
+  - Full Scan (1–65535 ports)
+  - Ping Scan (host discovery)
+  - OS Detection
+  - Version Detection
+  - Custom scans with manual port ranges
+- 📊 Real-time scan output with scrollable text view
+- 🧩 Compatible with Windows, Linux, and macOS
+- 🔄 Multi-threaded execution keeps GUI responsive
+- 🧠 Smart Nmap command builder based on user input
