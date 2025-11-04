@@ -19,12 +19,16 @@ Built with **Tkinter**, this tool provides multiple scan types, live progress up
 - 🧠 Smart Nmap command builder based on user input
 
 ##Screenshots
+## 🖼️ Screenshots
+
 <p align="center">
-  <img src="images/screenshot.png" alt="Main GUI" width="800">
+  <img src="screenshot.png" alt="Main GUI" width="750">
 </p>
+
 <p align="center">
-  <img src="images/screenshot1.png" alt="Main GUI" width="800">
+  <img src="screenshot1.png" alt="Scan Results" width="750">
 </p>
+
 
 ## 🛠️ Installation Guide (Kali linux)
  ```bash
