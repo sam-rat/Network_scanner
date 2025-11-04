@@ -17,3 +17,10 @@ Built with **Tkinter**, this tool provides multiple scan types, live progress up
 - 🧩 Compatible with Windows, Linux, and macOS
 - 🔄 Multi-threaded execution keeps GUI responsive
 - 🧠 Smart Nmap command builder based on user input
+
+## 🛠️ Installation Guide (All Systems)
+
+### 1️⃣ Clone the repository
+git clone https://github.com/sam_rat/Network_scanner.git
+
+cd Network_scanner
